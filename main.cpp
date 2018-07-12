@@ -33,8 +33,9 @@ uint8_t bitmap24_buffer[256*256*3];
 
 
 #define NUM_GPIO 4
-#define MIN_WIDTH 1000
-#define MAX_WIDTH 2000
+#define ADJUST_PARA 200
+#define MIN_WIDTH (1000 - ADJUST_PARA)
+#define MAX_WIDTH (2000 + ADJUST_PARA)
 #define ANGLE_RANGE 60.0 //rotatinig rangle
 #define FREQUENCY 1000
 
@@ -70,7 +71,7 @@ int servo_control(double center_y)
 
   if(center_y > 0)
   {
-     double angle = (256.0 - center_y)*ANGLE_RANGE/256.0;
+     double angle = center_y*ANGLE_RANGE/256.0;
      double servo_control_angle = MIN_WIDTH + angle/resolution;
      gpioServo(NUM_GPIO,servo_control_angle);
      //time_sleep(0.01);
@@ -107,11 +108,10 @@ void setup_packet_switch(){
             center_y = (data(0,1) + data(1,1))/2.0;
 
             //first order low pass filter
-            double filter_center_y = alpha * center_y + (1-alpha)*lastCenter_y;
-            lastCenter_y = filter_center_y;
-
-            center_y = filter_center_y;
-
+            //double filter_center_y = alpha * center_y + (1-alpha)*lastCenter_y;
+            //lastCenter_y = filter_center_y;
+            //center_y = filter_center_y;
+            fprintf(f,"Center X: %f, Center Y: %f\n",center_x,center_y);
         }
         else
         {
@@ -121,7 +121,6 @@ void setup_packet_switch(){
         }
 
         printf("Box Center: x = %f, y = %f\n",center_x,center_y);
-        fprintf(f,"Center Y: %f\n",center_y);
 
     });
 
