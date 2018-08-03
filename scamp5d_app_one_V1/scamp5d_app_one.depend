@@ -1,0 +1,92 @@
+# depslib dependency file v1.0
+1529219360 source:/home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_app_one/main.cpp
+	<unistd.h>
+	<cstdlib>
+	"scamp5d_spi.h"
+	"scamp5d_usb.h"
+	"scamp5d_proxy.h"
+	"vs_packet_decoder.hpp"
+	"debug_functions.h"
+	<stdio.h>
+	<stdlib.h>
+	<signal.h>
+	<pigpio.h>
+
+1527431226 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/scamp5d_spi.h
+	"scamp5d_interface.h"
+	"s5d_port.h"
+	<unistd.h>
+	<sys/stat.h>
+	<sys/ioctl.h>
+	<fcntl.h>
+	<linux/spi/spidev.h>
+
+1527431226 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/scamp5d_interface.h
+	<cstdio>
+	<cstdlib>
+	<cstring>
+	<list>
+	<algorithm>
+	<functional>
+	<thread>
+	<atomic>
+	<mutex>
+	<condition_variable>
+	"vs_message.hpp"
+	"vs_protocol.hpp"
+
+1527431228 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/vs_message.hpp
+	<cstdint>
+
+1527431228 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/vs_protocol.hpp
+	<cstdint>
+	<cstdlib>
+	<cstring>
+	<functional>
+
+1527431226 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/s5d_port.h
+
+1527431228 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/scamp5d_usb.h
+	"scamp5d_interface.h"
+
+1527431226 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/scamp5d_proxy.h
+	"scamp5d_interface.h"
+
+1527431228 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/vs_packet_decoder.hpp
+	<list>
+	<string>
+	<array>
+	<functional>
+	"vs_protocol.hpp"
+	"vs_protocol_gui.hpp"
+	"vs_message.hpp"
+	"vs_array.hpp"
+
+1527431228 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/vs_protocol_gui.hpp
+	"vs_protocol.hpp"
+
+1527431228 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/vs_array.hpp
+	<cstdint>
+	<cstdlib>
+	<fstream>
+	<sstream>
+
+1527431226 /home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_interface/debug_functions.h
+	<stdio.h>
+	<stdlib.h>
+	<stdint.h>
+
+1529519872 source:/home/pi/scamp5d_interface_lib_linux_1_1_0/scamp5d_app_one_V1/main.cpp
+	<unistd.h>
+	<cstdlib>
+	"scamp5d_spi.h"
+	"scamp5d_usb.h"
+	"scamp5d_proxy.h"
+	"vs_packet_decoder.hpp"
+	"debug_functions.h"
+	<math.h>
+	<stdio.h>
+	<stdlib.h>
+	<signal.h>
+	<pigpio.h>
+
