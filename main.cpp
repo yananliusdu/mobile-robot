@@ -1,4 +1,5 @@
 
+#include <iostream>
 #include <unistd.h>
 #include <cstdlib>
 #include "scamp5d_spi.h"
@@ -6,11 +7,20 @@
 #include "scamp5d_proxy.h"
 #include "vs_packet_decoder.hpp"
 #include "debug_functions.h"
+#include <math.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <pigpio.h>
+
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "Eigen/SVD"
+#include "Eigen/LU"
+
+using namespace Eigen;
+using namespace std;
 
 
 #ifdef RPI_VER
@@ -33,22 +43,90 @@ uint8_t bitmap24_buffer[256*256*3];
 
 
 #define NUM_GPIO 4
-#define ADJUST_PARA 200
+#define ADJUST_PARA 150
 #define MIN_WIDTH (1000 - ADJUST_PARA)
 #define MAX_WIDTH (2000 + ADJUST_PARA)
 #define ANGLE_RANGE 60.0 //rotatinig rangle
 #define FREQUENCY 1000
+#define MAX_EDGE 40
 
 double center_x = -1.0;
 double center_y = -1.0;
+double center_y_beta = 0.0;
+double center_y_beta_thre = 20;
+double k_beta_y = 40;
+double y_damp = 3;
+
+double center_x_beta = 0.0;
+double center_x_beta_thre = 20;
+double k_beta_x = 40;
+double x_damp = 3;
+
 int init_servo = 0;
 double servo_control_range = 0.0;
 double resolution  = 0.0;
 FILE *f;
 
+struct patternCorner
+{
+   double x;
+   double y;
+};
+
+patternCorner imageCorner[4];
+patternCorner imageCornerOutput[4];
+
+//record the sum length of the last pattern
+double sum_length = 0;
+double perimeter_threshold = 70;  // the reference perimeter is 105
+
 //first order low pass filter coefficient
 double alpha = 0.5; //(0,1)
 double lastCenter_y = 256.0/2;
+int cornerCount = 0; // used to record the four number of a pattern
+int recordEffectiveImage = 0; //used to record number of frames that contain corners
+
+
+int maxtrix_cal( MatrixXd P)
+{
+
+   //camera intrinsic matrix
+   MatrixXd K(3,3);
+   K(0,0) = 218.423;
+   K(0,1) = 0;
+   K(0,2) = 134.2604;
+   K(1,0) = 0;
+   K(1,1) = 218.4448;
+   K(1,2) = 127.3721;
+   K(2,0) = 0;
+   K(2,1) = 0;
+   K(2,2) = 1;
+
+   MatrixXd Q(3,4);
+   Q(0,0) = 33;
+   Q(0,1) = -33;
+   Q(0,2) = -33;
+   Q(0,3) = 33;
+   Q(1,0) = 33.75;
+   Q(1,1) = 33.75;
+   Q(1,2) = -33.75;
+   Q(1,3) = -33.75;
+   Q(2,0) = 1;
+   Q(2,1) = 1;
+   Q(2,2) = 1;
+   Q(2,3) = 1;
+
+   Matrix3d H = Matrix3d::Zero(3,3);
+
+   MatrixXd Mit(3,3);
+   Mit = Q*Q.transpose();
+
+   H = K.inverse() * P * Q.transpose() * Mit.inverse();
+
+   cout << H << endl;
+
+  return 0;
+}
 
 int servo_control(double center_y)
 {
@@ -77,7 +155,6 @@ int servo_control(double center_y)
      //time_sleep(0.01);
   }
 
-
    return 0;
 }
 
@@ -94,33 +171,182 @@ void setup_packet_switch(){
     });
 
     // boundingbox are from the 'scamp5_output_boundingbox' function
-    packet_switch->case_boundingbox([&](const vs_array<uint8_t>&data){
+    packet_switch->case_boundingbox([&](const vs_array<uint8_t>&data)
+    {
         auto sn = packet_switch->get_packet_sn();
         auto lc = packet_switch->get_loop_counter();
         printf("packet[%d]: aabb, lc=%d, { %d, %d, %d, %d }\n",sn,lc,data(0,0),data(0,1),data(1,0),data(1,1));
 
         int arthmetic_product = data(0,0)*data(0,1)*data(1,0)*data(1,1);
 
+
         if(arthmetic_product > 1) //return{ 0 0 0 0}, indicates there is no effective data obtained from the scamp
         {
 
-            center_x = (data(0,0) + data(1,0))/2.0;
-            center_y = (data(0,1) + data(1,1))/2.0;
+            int center_tmp_x = (data(0,0) + data(1,0))/2.0;
+            int center_tmp_y = (data(0,1) + data(1,1))/2.0;
 
-            //first order low pass filter
-            //double filter_center_y = alpha * center_y + (1-alpha)*lastCenter_y;
-            //lastCenter_y = filter_center_y;
-            //center_y = filter_center_y;
-            fprintf(f,"Center X: %f, Center Y: %f\n",center_x,center_y);
+             if(cornerCount <= 3)
+            {
+                imageCorner[cornerCount].x = center_tmp_x;
+                imageCorner[cornerCount].y = center_tmp_y;
+                cornerCount++;
+            }
+            else
+            {
+                MatrixXd Ip = MatrixXd::Zero(3,4);
+                Ip(0,0) = imageCorner[0].x;
+                Ip(0,1) = imageCorner[1].x;
+                Ip(0,2) = imageCorner[2].x;
+                Ip(0,3) = imageCorner[3].x;
+                Ip(1,0) = 256.0 - imageCorner[0].y;
+                Ip(1,1) = 256.0 - imageCorner[1].y;
+                Ip(1,2) = 256.0 - imageCorner[2].y;
+                Ip(1,3) = 256.0 - imageCorner[3].y;
+                Ip(2,0) = 1.0;
+                Ip(2,1) = 1.0;
+                Ip(2,2) = 1.0;
+                Ip(2,3) = 1.0;
+
+                MatrixXd Ip_tmp = MatrixXd::Zero(3,4);
+                Ip_tmp.row(0) = Ip.row(1);
+                Ip_tmp.row(1) = Ip.row(0);
+                Ip_tmp.row(2) << 1.0,1.0,1.0,1.0;
+
+                maxtrix_cal( Ip_tmp );
+
+
+                cornerCount = 0;
+                double  patternCentreX = (imageCorner[0].x + imageCorner[1].x + imageCorner[2].x + imageCorner[3].x)/4;
+                double  patternCentreY = (imageCorner[0].y + imageCorner[1].y + imageCorner[2].y + imageCorner[3].y)/4;
+
+                for(int i = 0; i < 4; i++)
+                {
+                    double diffX = imageCorner[i].x - patternCentreX;
+                    double diffY = imageCorner[i].y - patternCentreY;
+
+                    if (diffX < 0 && diffY < 0)
+                    {
+                        imageCornerOutput[0] = imageCorner[i];
+                    }
+                    else if(diffX < 0 && diffY > 0)
+                    {
+                        imageCornerOutput[1] = imageCorner[i];
+                    }
+                    else if(diffX > 0 && diffY > 0)
+                    {
+                        imageCornerOutput[2] = imageCorner[i];
+                    }
+                    else if(diffX > 0 && diffY < 0)
+                    {
+                        imageCornerOutput[3] = imageCorner[i];
+                    }
+                    else
+                    {
+                        printf("Something maybe wrong");
+                    };
+
+                }
+
+                //get rid of the wrong points
+                double edge[4];
+
+                edge[0] = pow(pow(imageCornerOutput[0].x - imageCornerOutput[1].x,2) + pow(imageCornerOutput[0].y - imageCornerOutput[1].y,2), 0.5);
+                edge[1] = pow(pow(imageCornerOutput[1].x - imageCornerOutput[2].x,2) + pow(imageCornerOutput[1].y - imageCornerOutput[2].y,2), 0.5);
+                edge[2] = pow(pow(imageCornerOutput[2].x - imageCornerOutput[3].x,2) + pow(imageCornerOutput[2].y - imageCornerOutput[3].y,2), 0.5);
+                edge[3] = pow(pow(imageCornerOutput[3].x - imageCornerOutput[0].x,2) + pow(imageCornerOutput[3].y - imageCornerOutput[0].y,2), 0.5);
+
+                int posnegflag = 1;
+                for(int i = 0; i < 4; i++)
+                {
+                   if(edge[i] > MAX_EDGE)
+                   {
+                      posnegflag = -1;
+                   }
+                }
+                // sorting the points in a given order
+                // p1 topright p2 topleft
+
+                //effective four points
+                if(posnegflag > 0)
+                {
+
+                    //record the sum edge length
+                    sum_length = edge[0] + edge[1] + edge[2] + edge[3];
+                     //judge the changes of the shape
+                    center_y_beta = imageCornerOutput[3].y + imageCornerOutput[2].y - imageCornerOutput[0].y - imageCornerOutput[1].y;
+                    center_x_beta = imageCornerOutput[1].x + imageCornerOutput[2].x - imageCornerOutput[0].x - imageCornerOutput[3].x;
+
+                    if(fabs(center_y_beta) > center_y_beta_thre)
+                    {
+                        center_y_beta = 0;
+                    }
+                     if(fabs(center_x_beta) > center_x_beta_thre)
+                    {
+                        center_x_beta = 0;
+                    }
+
+                    //k_beta_y = 0;
+                    //k_beta_x = 0;
+
+                    if(fabs(center_x_beta) >= 0.5 && fabs(center_y_beta) >= 0.5 )
+                    {
+                      center_y = patternCentreY + k_beta_y/(center_y_beta + y_damp * center_y_beta/fabs(center_y_beta));
+                                                + k_beta_x/(center_x_beta + x_damp * center_x_beta/fabs(center_x_beta));
+                    }
+                    else if(fabs(center_y_beta) < 0.5 && fabs(center_x_beta) >= 0.5 )
+                    {
+                      center_y = patternCentreY + k_beta_x/(center_x_beta + x_damp * center_x_beta/fabs(center_x_beta));
+                    }
+                    else if(fabs(center_y_beta) >= 0.5 && fabs(center_x_beta) < 0.5 )
+                    {
+                      center_y = patternCentreY + k_beta_y/(center_y_beta + y_damp * center_y_beta/fabs(center_y_beta));
+                    }
+                    else
+                    {
+                      center_y = patternCentreY;
+                    }
+
+                    // record these points in txt for later analysis -- original data
+                    for(int i = 0; i < 4; i++)
+                    {
+                     fprintf(f,"%d %f %f %f %f %f\n",recordEffectiveImage,imageCornerOutput[i].x,imageCornerOutput[i].y,center_y_beta,center_x_beta,center_y);
+                    }
+                    recordEffectiveImage++;
+
+                    //first order low pass filter
+                    double filter_center_y = alpha * center_y + (1-alpha)*lastCenter_y;
+                    lastCenter_y = filter_center_y;
+                    center_y = filter_center_y;
+
+                }
+
+            }
+
         }
         else
         {
-            center_x = -1.0;
-            center_y = -1.0;
+
+           // the target is lost.
+            if( sum_length <= perimeter_threshold)
+            {
+              // do not change rover direction when it is far away from the target
+               center_x = -1.0;
+               center_y = -1.0;
+            }
+            else
+            {
+               //when the rover gets close to the target and keep zero angle
+               center_x = 128.0;
+               center_y = 128.0;
+
+               center_x_beta = 0;
+               center_y_beta = 0;
+            }
 
         }
 
-        printf("Box Center: x = %f, y = %f\n",center_x,center_y);
+        //printf("Box Center: x = %f, y = %f\n",center_x,center_y);
 
     });
 
@@ -213,7 +439,7 @@ void input_loop(){
 
 int main(int argc,char*argv[]){
 
-    f = fopen("record_center_y.txt","w");
+    f = fopen("data recorded.txt","w");
     if(f == NULL)
     {
         printf("Error opening file!\n");
@@ -283,7 +509,6 @@ int main(int argc,char*argv[]){
 //        time_sleep(0.1);
         box->routine();
         proxy->routine();
-//        count_number++;
 
         servo_control(center_y);
 
